@@ -34,27 +34,84 @@ The fast path reads **character-level bounding boxes** and rebuilds spacing and 
 
 The VLM channel is **optional** — it needs ~1.7 GB of weights and torch. Everything works without it.
 
-## Install
+## Quick start
+
+Three steps, ~1 minute.
 
 ```bash
-pip install xiaomi-ocr-mcp            # fast OCR + desktop control
-pip install "xiaomi-ocr-mcp[gpu]"     # + DirectML acceleration on Windows
-pip install "xiaomi-ocr-mcp[vlm]"     # + Xiaomi-OCR-0 channel (torch, transformers)
+# 1. install (from GitHub — no PyPI release yet)
+pip install "xiaomi-ocr-mcp[gpu] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
+
+# 2. verify — should print fast_backend: dml (Windows) and the tool list
+xiaomi-ocr-mcp --check
+
+# 3. point your MCP client at the command `xiaomi-ocr-mcp`
+```
+
+Then in your AI client:
+
+```
+Read the code in that editor window and summarise it.
+```
+
+The first OCR call downloads the PP-OCRv6 weights (~10 MB) into the cache directory; after that it is fully offline.
+
+### Client snippets
+
+**Claude Code** (CLI)
+
+```bash
+claude mcp add xiaomi-ocr -s user -- xiaomi-ocr-mcp
+```
+
+**Codex** (CLI)
+
+```bash
+codex mcp add xiaomi-ocr -- xiaomi-ocr-mcp
+```
+
+**Claude Desktop / Cursor / Cline** — see [Configure your client](#configure-your-client) below.
+
+## Install
+
+From GitHub (works today):
+
+```bash
+pip install "xiaomi-ocr-mcp @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"          # CPU
+pip install "xiaomi-ocr-mcp[gpu] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"     # + DirectML
+pip install "xiaomi-ocr-mcp[vlm] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"     # + Xiaomi-OCR-0
+```
+
+From a local clone:
+
+```bash
+git clone https://github.com/SorenKang/xiaomi-ocr-mcp.git
+cd xiaomi-ocr-mcp
+pip install ".[gpu]"
+```
+
+From PyPI (once published):
+
+```bash
+pip install xiaomi-ocr-mcp
 ```
 
 Or run without installing:
 
 ```bash
-uvx xiaomi-ocr-mcp
+uvx --from git+https://github.com/SorenKang/xiaomi-ocr-mcp xiaomi-ocr-mcp
 ```
+
+**Requirements:** Python ≥ 3.10. No CUDA needed on Windows — DirectML ships as a wheel.
 
 ### Enable the VLM channel
 
 ```bash
-pip install "xiaomi-ocr-mcp[vlm]"
-xiaomi-ocr-mcp --download-model       # ~1.7 GB → ~/.cache/xiaomi-ocr-mcp/models
-export XIAOMI_OCR_VLM=1
+pip install "xiaomi-ocr-mcp[vlm] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
+xiaomi-ocr-mcp --download-model       # ~1.7 GB → ~/.xiaomi-ocr-mcp/models
 ```
+
+No environment variable needed — the VLM turns on automatically once the weights exist. `--check` confirms it.
 
 `--check` prints what is available on your machine.
 
