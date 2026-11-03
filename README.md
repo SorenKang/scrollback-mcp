@@ -1,5 +1,13 @@
 # xiaomi-ocr-mcp
 
+![License](https://img.shields.io/badge/license-Apache--2.0-green)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![MCP](https://img.shields.io/badge/MCP-stdio-orange)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+
+> **Unofficial community project.** Not affiliated with, endorsed by, or sponsored by Xiaomi.
+> Uses the open-source [Xiaomi-OCR-0](https://huggingface.co/xiaomi-research/Xiaomi-OCR-0) model (Apache-2.0).
+
 **Screen OCR + desktop control as an MCP server.** Any MCP client can use it — Claude Desktop, Cursor, Cline, Continue, DSH, or your own agent.
 
 Reads whatever is on screen, keeps code indentation intact, and can type back into the focused window.
