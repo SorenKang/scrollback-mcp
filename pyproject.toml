@@ -4,36 +4,35 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xiaomi-ocr-mcp"
-version = "0.1.0"
-description = "MCP server for screen OCR and desktop control, powered by Xiaomi-OCR-0 and PP-OCRv6"
+version = "0.2.0"
+description = "Rebuild a source tree from a screen recording of an IDE — CLI and MCP server"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "xiaomi-ocr-mcp contributors" }]
-keywords = ["mcp", "ocr", "screen-capture", "automation", "xiaomi", "pp-ocr", "computer-use"]
+keywords = ["mcp", "ocr", "video", "screen-recording", "intellij", "code-recovery", "pp-ocr"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX :: Linux",
-    "Operating System :: MacOS",
-    "Topic :: Multimedia :: Graphics :: Capture :: Screen Capture",
+    "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Software Development",
 ]
 
 dependencies = [
     "mcp>=1.2",
-    "pillow>=10",
     "numpy>=1.24",
-    "rapidocr>=2.0",
+    "opencv-python-headless>=4.8",
+    "rapidocr>=3.4",
     "onnxruntime>=1.17",
 ]
 
 [project.optional-dependencies]
-# 桌面控制（Windows 用 ctypes，无需额外依赖；其它平台靠系统命令）
-# VLM 通道：Xiaomi-OCR-0，约 1.7GB 权重
-vlm = ["torch>=2.2", "transformers>=4.45", "accelerate", "huggingface_hub"]
-# GPU 加速（Windows 上走 DirectML，无需 CUDA 运行时）
+# Windows GPU via DirectML (no CUDA needed). Run `xiaomi-ocr-mcp check --fix-gpu` after installing.
 gpu = ["onnxruntime-directml"]
+# YAML well-formedness check during verify
+yaml = ["pyyaml"]
+# tools/make_video.py (synthetic test recordings)
+dev = ["pillow>=10"]
 
 [project.scripts]
 xiaomi-ocr-mcp = "xiaomi_ocr_mcp.__main__:main"

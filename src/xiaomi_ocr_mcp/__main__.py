@@ -1,9 +1,13 @@
-"""CLI entry point.
+"""Command line.
 
-    xiaomi-ocr-mcp                 # start the stdio MCP server (what clients invoke)
-    xiaomi-ocr-mcp --check         # print environment / backend diagnostics
-    xiaomi-ocr-mcp --download-model # fetch Xiaomi-OCR-0 (~1.7 GB) for the VLM channel
-    xiaomi-ocr-mcp --selftest      # capture + OCR smoke test
+    xiaomi-ocr-mcp                              run the MCP server (stdio) — what MCP clients start
+    xiaomi-ocr-mcp rebuild VIDEO -o OUT         recording → project directory
+    xiaomi-ocr-mcp report OUT                   what still needs review
+    xiaomi-ocr-mcp crop OUT FILE START [END]    frame crop showing those lines
+    xiaomi-ocr-mcp set OUT FILE LINE TEXT       fix line(s); TEXT may hold \\n; '-' reads stdin
+    xiaomi-ocr-mcp verify OUT [--build]         syntax check (+ mvn compile)
+    xiaomi-ocr-mcp frame VIDEO SECONDS -o PNG   save one frame
+    xiaomi-ocr-mcp check [--fix-gpu]            environment diagnostics
 """
 
 from __future__ import annotations
@@ -11,62 +15,26 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__
 
 
-def _directml_installed() -> bool:
-    """DirectML 包装了，但可能被 CPU 版 onnxruntime 抢走 import。"""
-    try:
-        from importlib.metadata import version
-
-        version("onnxruntime-directml")
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+def _print(obj) -> None:
+    sys.stdout.write(json.dumps(obj, ensure_ascii=False, indent=1) + "\n")
 
 
-def _fix_gpu() -> int:
-    """卸载 CPU 版 onnxruntime，让 onnxruntime-directml 接管。
-
-    rapidocr 依赖 CPU 版 onnxruntime，两个包版本号是独立序列（1.31 vs 1.24），
-    pip 不会互相替换，于是 import 时 CPU 版永远先赢——装完 [gpu] 仍然是 CPU。
-    """
-    import subprocess
-
-    py = sys.executable
-    print("1/2 removing CPU onnxruntime (it shadows DirectML)…", file=sys.stderr)
-    subprocess.run([py, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
-    print("2/2 reinstalling onnxruntime-directml…", file=sys.stderr)
-    subprocess.run([py, "-m", "pip", "install", "--force-reinstall", "--no-deps",
-                    "onnxruntime-directml"], check=False)
-
-    try:
-        import onnxruntime as ort
-
-        providers = ort.get_available_providers()
-        if "DmlExecutionProvider" in providers:
-            print(f"OK — DirectML active (onnxruntime {ort.__version__})", file=sys.stderr)
-            return 0
-        print(f"DirectML still missing. providers={providers}", file=sys.stderr)
-        print("Manual fix: pip install onnxruntime-directml", file=sys.stderr)
-        return 1
-    except Exception as exc:  # noqa: BLE001
-        print(f"import failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
+def _progress(p: dict) -> None:
+    if p.get("stage") == "ocr":
+        sys.stderr.write(f"\r  ocr {p['t']:>7.1f}/{p['seconds']}s  frames {p['frames']}  "
+                         f"elapsed {p['elapsed']}s   ")
+    else:
+        sys.stderr.write(f"\n  {p['stage']}…")
+    sys.stderr.flush()
 
 
-def _check() -> int:
+def _check(fix_gpu: bool) -> int:
     info: dict = {"version": __version__}
-    try:
-        from .platform import PLATFORM
-
-        info["platform"] = PLATFORM
-    except Exception as exc:  # noqa: BLE001
-        info["platform_error"] = f"{type(exc).__name__}: {exc}"
-
     try:
         import onnxruntime as ort
 
@@ -74,106 +42,135 @@ def _check() -> int:
         info["providers"] = ort.get_available_providers()
     except Exception as exc:  # noqa: BLE001
         info["onnxruntime_error"] = f"{type(exc).__name__}: {exc}"
+    from . import ocr, verify
 
-    try:
-        from . import engine_fast
-
-        info["fast_backend"] = engine_fast._pick_backend()
-    except Exception as exc:  # noqa: BLE001
-        info["fast_backend_error"] = f"{type(exc).__name__}: {exc}"
-
-    info["vlm_enabled"] = config.vlm_enabled()
-    info["vlm_model_dir"] = str(config.vlm_model_dir())
-    info["cache_dir"] = str(config.home())
-
+    info["ocr_backend"] = ocr.pick_backend()
+    info["javac"] = verify.find_javac()
+    info["mvn"] = verify.find_mvn()
     tips = []
-    providers = info.get("providers") or []
-    if info.get("fast_backend") == "cpu":
-        if _directml_installed() and info.get("platform") == "windows":
-            tips.append(
-                "DirectML is installed but shadowed by the CPU onnxruntime build. "
-                "Run: xiaomi-ocr-mcp --fix-gpu   (then re-run --check; fast_backend should say dml)"
-            )
-        else:
-            tips.append(
-                'Running on CPU (~2 s/screen). For ~0.23 s/screen: '
-                'pip install "xiaomi-ocr-mcp[gpu]" then xiaomi-ocr-mcp --fix-gpu'
-            )
-    if not info["vlm_enabled"]:
-        tips.append(
-            "VLM channel is off (fast path only). Enable with: "
-            "pip install \"xiaomi-ocr-mcp[vlm]\" && xiaomi-ocr-mcp --download-model"
-        )
+    if info["ocr_backend"] == "cpu" and sys.platform == "win32":
+        try:
+            from importlib.metadata import version
+
+            version("onnxruntime-directml")
+            tips.append("onnxruntime-directml is installed but the CPU onnxruntime shadows it: "
+                        "run `xiaomi-ocr-mcp check --fix-gpu`")
+        except Exception:  # noqa: BLE001
+            tips.append('CPU only. For GPU on Windows: pip install "xiaomi-ocr-mcp[gpu]" '
+                        "then `xiaomi-ocr-mcp check --fix-gpu`")
+    if not info["javac"]:
+        tips.append("javac not found: Java syntax checking is disabled (set JAVA_HOME)")
     if tips:
         info["tips"] = tips
+    _print(info)
+    if fix_gpu:
+        import subprocess
 
-    print(json.dumps(info, indent=2, ensure_ascii=False))
-    return 0
-
-
-def _download_model() -> int:
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        print("huggingface_hub is missing. Install with:\n"
-              "  pip install 'xiaomi-ocr-mcp[vlm]'", file=sys.stderr)
-        return 1
-    dest = config.vlm_model_dir()
-    dest.mkdir(parents=True, exist_ok=True)
-    print(f"downloading Xiaomi-OCR-0 → {dest}", file=sys.stderr)
-    snapshot_download(
-        repo_id="xiaomi-research/Xiaomi-OCR-0",
-        local_dir=str(dest),
-        allow_patterns=["config.json", "model.safetensors", "processor_config.json",
-                        "tokenizer*.json", "chat_template.jinja", "*.json"],
-        max_workers=8,
-    )
-    total = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
-    print(f"done: {total / 1024 ** 3:.2f} GB → {dest}", file=sys.stderr)
-    return 0
-
-
-def _selftest() -> int:
-    from . import engine_fast
-    from .platform import capture, save
-
-    shot = config.shots_dir() / "selftest.png"
-    img = capture()
-    save(img, str(shot))
-    t0 = time.time()
-    r = engine_fast.ocr_code(img)
-    print(f"capture {img.width}x{img.height} → {shot}", file=sys.stderr)
-    print(f"OCR {time.time() - t0:.2f}s, {r['lines']} lines, score {r['avg_score']:.3f}", file=sys.stderr)
-    print(r["code"][:800], file=sys.stderr)
+        # rapidocr pulls in the CPU onnxruntime; both packages provide the same module and
+        # pip never replaces one with the other, so the CPU build wins the import.
+        py = sys.executable
+        subprocess.run([py, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
+        subprocess.run([py, "-m", "pip", "install", "--force-reinstall", "--no-deps",
+                        "onnxruntime-directml"], check=False)
+        print("re-run `xiaomi-ocr-mcp check`: ocr_backend should now be dml", file=sys.stderr)
     return 0
 
 
 def main() -> int:
+    if len(sys.argv) == 1 or sys.argv[1] in ("serve", "--stdio"):
+        from .server import mcp
+
+        mcp.run(transport="stdio")
+        return 0
+
     ap = argparse.ArgumentParser(prog="xiaomi-ocr-mcp", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    ap.add_argument("--check", action="store_true", help="print environment diagnostics")
-    ap.add_argument("--download-model", action="store_true", help="download Xiaomi-OCR-0 weights")
-    ap.add_argument("--selftest", action="store_true", help="capture + OCR smoke test")
-    ap.add_argument("--fix-gpu", action="store_true",
-                    help="remove the CPU onnxruntime build that shadows DirectML")
-    args = ap.parse_args()
+    sub = ap.add_subparsers(dest="cmd", required=True)
 
-    if args.fix_gpu:
-        return _fix_gpu()
-    if args.check:
-        return _check()
-    if args.download_model:
-        return _download_model()
-    if args.selftest:
-        return _selftest()
+    p = sub.add_parser("rebuild", help="recording → project directory")
+    p.add_argument("video")
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--fps", type=float, default=10.0, help="frames sampled per second (default 10)")
+    p.add_argument("--no-verify", action="store_true")
 
-    from .server import mcp
+    p = sub.add_parser("report", help="print the review report")
+    p.add_argument("out")
+    p.add_argument("--json", action="store_true", help="the review queue as JSON")
 
-    print(f"[xiaomi-ocr-mcp] starting stdio server (cache={config.home()}, "
-          f"vlm={'on' if config.vlm_enabled() else 'off'})", file=sys.stderr)
-    mcp.run(transport="stdio")
-    return 0
+    p = sub.add_parser("crop", help="frame crop showing lines START..END of FILE")
+    p.add_argument("out")
+    p.add_argument("file")
+    p.add_argument("start", type=int)
+    p.add_argument("end", type=int, nargs="?")
+
+    p = sub.add_parser("set", help="replace line(s) of FILE starting at LINE")
+    p.add_argument("out")
+    p.add_argument("file")
+    p.add_argument("line", type=int)
+    p.add_argument("text", help="new text; \\n separates lines; '-' reads stdin")
+
+    p = sub.add_parser("verify", help="syntax-check the rebuilt tree")
+    p.add_argument("out")
+    p.add_argument("--build", action="store_true", help="also run `mvn compile`")
+
+    p = sub.add_parser("frame", help="save the frame at SECONDS")
+    p.add_argument("video")
+    p.add_argument("seconds", type=float)
+    p.add_argument("-o", "--out", default="frame.png")
+
+    p = sub.add_parser("check", help="environment diagnostics")
+    p.add_argument("--fix-gpu", action="store_true",
+                   help="remove the CPU onnxruntime that shadows onnxruntime-directml")
+
+    a = ap.parse_args()
+    if a.cmd == "rebuild":
+        from . import rebuild
+
+        res = rebuild.run(a.video, a.out, sample_fps=a.fps, progress=_progress,
+                          verify=not a.no_verify)
+        sys.stderr.write("\n")
+        res.get("verify", {}).pop("by_file", None)
+        _print(res)
+        return 0
+    if a.cmd == "report":
+        from . import review
+
+        if a.json:
+            _print(review.queue(a.out))
+        else:
+            sys.stdout.write((Path(a.out) / ".xocr" / "REPORT.md").read_text(encoding="utf-8"))
+        return 0
+    if a.cmd == "crop":
+        from . import review
+
+        _print(review.crop(a.out, a.file, a.start, a.end))
+        return 0
+    if a.cmd == "set":
+        from . import review
+
+        text = sys.stdin.read().rstrip("\n") if a.text == "-" else a.text.replace("\\n", "\n")
+        _print(review.set_lines(a.out, a.file, a.line, text))
+        return 0
+    if a.cmd == "verify":
+        from . import review, verify
+
+        res = verify.check(a.out, build=a.build)
+        review.write_report(a.out)
+        _print(res)
+        return 0
+    if a.cmd == "frame":
+        import cv2
+
+        from . import video
+
+        fps = video.info(a.video)["fps"]
+        cv2.imencode(".png", video.frame_at(a.video, int(a.seconds * fps)))[1].tofile(a.out)
+        _print({"ok": True, "path": str(Path(a.out).resolve())})
+        return 0
+    if a.cmd == "check":
+        return _check(a.fix_gpu)
+    return 1
 
 
 if __name__ == "__main__":

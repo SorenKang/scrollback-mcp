@@ -28,3 +28,7 @@ models/
 _dbg*.py
 _t1.py
 _hs.jsonl
+
+# rebuild output
+.xocr/
+*.mp4

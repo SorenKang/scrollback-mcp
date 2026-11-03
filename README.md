@@ -3,256 +3,116 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![MCP](https://img.shields.io/badge/MCP-stdio-orange)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 > **Unofficial community project.** Not affiliated with, endorsed by, or sponsored by Xiaomi.
-> Uses the open-source [Xiaomi-OCR-0](https://huggingface.co/xiaomi-research/Xiaomi-OCR-0) model (Apache-2.0).
 
-**Screen OCR + desktop control as an MCP server.** Any MCP client can use it — Claude Desktop, Cursor, Cline, Continue, DSH, or your own agent.
-
-Reads whatever is on screen, keeps code indentation intact, and can type back into the focused window.
-
-```
-┌──────────────┐   stdio / JSON-RPC   ┌──────────────────────────────┐
-│  MCP client  │ ───────────────────► │  xiaomi-ocr-mcp              │
-│  (any AI)    │ ◄─────────────────── │  ├─ fast OCR   PP-OCRv6      │
-└──────────────┘                      │  ├─ vlm OCR    Xiaomi-OCR-0  │
-                                      │  └─ desktop    capture/input │
-                                      └──────────────────────────────┘
-```
-
-## Why two OCR engines
-
-| Channel | Engine | One screen of code | Accuracy | Use for |
-|---|---|---|---|---|
-| `fast` | PP-OCRv6 + bbox rebuild | **0.23 s** (GPU) / 0.7 s (CPU) | 1.000 | plain ASCII code, logs, terminals |
-| `vlm` | Xiaomi-OCR-0 (0.8B) | 6 s | 1.000 | Chinese comments, tables, formulas, multi-column |
-
-The fast path reads **character-level bounding boxes** and rebuilds spacing and indentation from the x-coordinates — that is what makes it usable for code. It is 26× faster than the VLM and just as accurate on ASCII source.
-
-`read_code` defaults to `engine="auto"`: it runs the fast path first and silently retries with the VLM when the result looks unreliable (high CJK ratio, unbalanced `"""`, low confidence).
-
-The VLM channel is **optional** — it needs ~1.7 GB of weights and torch. Everything works without it.
-
-## Quick start
-
-Three steps, ~1 minute.
-
-```bash
-# 1. install (from GitHub — no PyPI release yet)
-pip install "xiaomi-ocr-mcp[gpu] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
-
-# 2. verify — should print fast_backend: dml (Windows) and the tool list
-xiaomi-ocr-mcp --check
-
-# 3. point your MCP client at the command `xiaomi-ocr-mcp`
-```
-
-Then in your AI client:
+**Record your IDE scrolling through a project → get the project back as files.**
+CLI + MCP server: point it at a screen recording of IntelliJ IDEA and it rebuilds the
+source tree (`pom.xml`, `src/main/java/...`, resources), checks the syntax, and gives you a
+short list of lines worth a second look — with the video frame for each.
 
 ```
-Read the code in that editor window and summarise it.
+recording.mp4 ─► keyframes ─► line number + text per row ─► vote per line ─► project/ + REPORT.md
+                 (screen at rest)  (gutter = exact line index)    (all frames)
 ```
 
-The first OCR call downloads the PP-OCRv6 weights (~10 MB) into the cache directory; after that it is fully offline.
+> v0.2 is a rewrite. The 0.1 screen-control tools (click/type) are gone; this version is
+> about recovering code from recordings.
 
-### Client snippets
+## How it works
 
-**Claude Code** (CLI)
+- **The gutter is the index.** Each row is keyed by the line number printed next to it, so
+  stitching scrolled frames is exact, blank lines are explicit, lines nobody scrolled to are
+  reported by number, and Code Vision rows ("3 个用法", author hints) are skipped for free.
+- **Every row is read on its own.** Text detection misses tiny tokens (`}`, `*/`, single-digit
+  line numbers), so rows are cut out by their ink and sent straight to the recogniser
+  (PP-OCRv6 via RapidOCR; DirectML GPU on Windows).
+- **Spaces and indentation come from pixels.** In a monospace font a gap of k cells is k
+  spaces. Full-width Chinese punctuation is told apart from ASCII by its width.
+- **Every frame votes**, and code-aware fixes repair typical slips (`11 注释` → `// 注释`,
+  `S1f4j` → `Slf4j`, `import java.util.list` → `List`) — only where the misread form is not
+  valid code, and flagged for review.
+- **Names come from the code**: a Java file is named by its public type and placed by its
+  `package`; IDEA's navigation bar gives the module directory and non-Java paths.
 
-```bash
-claude mcp add xiaomi-ocr -s user -- xiaomi-ocr-mcp
-```
+### Measured (v0.2)
 
-**Codex** (CLI)
+Synthetic IDEA recordings rendered from a real multi-module Spring Boot project
+(苍穹外卖 day01 skeleton: Java with Chinese comments, `pom.xml`, YAML, MyBatis XML), 1080p,
+Darcula, Code Vision on, page-down + wheel scrolling (`tools/make_video.py`),
+RTX 4060 Laptop with DirectML:
 
-```bash
-codex mcp add xiaomi-ocr -- xiaomi-ocr-mcp
-```
+| recording | files | exact lines | time |
+|---|---|---|---|
+| 8 files, 12 s | 8/8, right paths | **274/274** | 20 s |
+| whole project (93 files, 3197 lines), 130 s | 93/93, right paths | 98.5 %¹ | ~3.5 min |
 
-**Claude Desktop / Cursor / Cline** — see [Configure your client](#configure-your-client) below.
+¹ measured one iteration before the last fixes; remaining errors are mostly Chinese
+punctuation and `//` markers in comments, plus a few letter-case slips.
+
+## Recording checklist
+
+1. **Line numbers on** (default) — they make stitching exact.
+2. **Navigation bar visible** (View → Appearance → Navigation Bar, or the status-bar
+   breadcrumb in the new UI) — gives each file its module and directory.
+3. **Expand all folds** before scrolling: `Ctrl+Shift+NumPad +` (imports are folded by default).
+4. **Inlay hints off** (Settings → Editor → Inlay Hints): parameter-name hints sit inside a line.
+5. Font 14 pt or larger, soft wraps off, one editor split, native resolution.
+6. **Open each file at the top and PageDown to the end**, pausing ~0.5 s per page.
 
 ## Install
 
-From GitHub (works today):
-
 ```bash
-pip install "xiaomi-ocr-mcp @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"          # CPU
-pip install "xiaomi-ocr-mcp[gpu] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"     # + DirectML
-pip install "xiaomi-ocr-mcp[vlm] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"     # + Xiaomi-OCR-0
+pip install "xiaomi-ocr-mcp[gpu,yaml] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
+xiaomi-ocr-mcp check            # ocr_backend should be dml (Windows) or cuda
+xiaomi-ocr-mcp check --fix-gpu  # if it says cpu although onnxruntime-directml is installed
 ```
 
-From a local clone:
-
-```bash
-git clone https://github.com/SorenKang/xiaomi-ocr-mcp.git
-cd xiaomi-ocr-mcp
-pip install ".[gpu]"
-```
-
-From PyPI (once published):
-
-```bash
-pip install xiaomi-ocr-mcp
-```
-
-Or run without installing:
-
-```bash
-uvx --from git+https://github.com/SorenKang/xiaomi-ocr-mcp xiaomi-ocr-mcp
-```
-
-**Requirements:** Python ≥ 3.10. No CUDA needed on Windows — DirectML ships as a wheel.
-
-### Enable the VLM channel
-
-```bash
-pip install "xiaomi-ocr-mcp[vlm] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
-xiaomi-ocr-mcp --download-model       # ~1.7 GB → ~/.xiaomi-ocr-mcp/models
-```
-
-No environment variable needed — the VLM turns on automatically once the weights exist. `--check` confirms it.
-
-`--check` prints what is available on your machine.
-
-## Configure your client
-
-The command is the same everywhere: **`xiaomi-ocr-mcp`** (or `uvx xiaomi-ocr-mcp`).
-
-**Claude Desktop** — `claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "xiaomi-ocr": { "command": "uvx", "args": ["xiaomi-ocr-mcp"] }
-  }
-}
-```
-
-**Cursor** — `.cursor/mcp.json`
-
-```json
-{
-  "mcpServers": {
-    "xiaomi-ocr": { "command": "uvx", "args": ["xiaomi-ocr-mcp"] }
-  }
-}
-```
-
-**Cline / Roo (VS Code)** — `cline_mcp_settings.json`
-
-```json
-{
-  "mcpServers": {
-    "xiaomi-ocr": {
-      "command": "uvx",
-      "args": ["xiaomi-ocr-mcp"],
-      "disabled": false,
-      "autoApprove": ["screen_info", "screenshot", "read_code", "see_screen"]
-    }
-  }
-}
-```
-
-**Continue** — `config.yaml`
-
-```yaml
-mcpServers:
-  - name: xiaomi-ocr
-    command: uvx
-    args: ["xiaomi-ocr-mcp"]
-```
-
-**DSH** — `cordis.patch.yml`
-
-```yaml
-- insert:
-    - id: panel-mcp-xiaomi-ocr
-      name: "@deepseek-ai/dsh-mcp-client"
-      config:
-        serverName: xiaomi-ocr
-        transport: stdio
-        command: xiaomi-ocr-mcp
-```
-
-## Tools
-
-### Look
-
-| Tool | What it does |
-|---|---|
-| `screen_info` | monitors, virtual desktop, active window, cursor — call this before clicking |
-| `screenshot(monitor, window, region, focus_first)` | save a PNG, return its path (no OCR, fastest) |
-| `read_code(monitor, window, region, engine, lang)` | **code-optimized** OCR: keeps indentation, rebuilds blank lines |
-| `see_screen(monitor, window, region, mode)` | VLM OCR: `text` / `code` / `document` / `table` / `formula` |
-| `ocr_image(path, mode, prompt)` | OCR a local file |
-| `ocr_clipboard(mode)` | OCR whatever image is on the clipboard |
-
-### Act
-
-| Tool | What it does |
-|---|---|
-| `list_windows()` / `focus_window(title)` / `wait_for_window(title)` | find and raise windows |
-| `mouse_move` / `mouse_click` / `mouse_drag` / `mouse_scroll` | pointer |
-| `type_text(text, method)` | `auto` picks clipboard-paste for long/CJK/multi-line text |
-| `press_keys("ctrl+s")` | key combos |
-| `type_code(code)` | paste a code block verbatim |
-| `clipboard_set` / `clipboard_get` | clipboard round-trip |
-| `input_selftest()` | verify the synthetic-input path actually reaches the OS |
-| `wait(seconds)` | sleep |
-
-## Environment variables
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `XIAOMI_OCR_HOME` | platform cache dir | where models and screenshots live |
-| `XIAOMI_OCR_MODEL_DIR` | `$HOME/models/Xiaomi-OCR-0` | VLM weights |
-| `XIAOMI_OCR_VLM` | auto (`1` if weights exist) | enable the VLM channel |
-| `RAPID_CODE_GPU` | `auto` | `auto` / `dml` / `cuda` / `cpu` |
-| `RAPID_CODE_MODEL` | `small` | `tiny` / `small` / `medium` |
-| `XIAOMI_OCR_SHOTS` | `$HOME/shots` | screenshot output directory |
-
-## Platform support
-
-| | Capture + OCR | Mouse / keyboard |
-|---|---|---|
-| **Windows** | ✅ native (ctypes, DPI-aware) | ✅ SendInput, Unicode-safe |
-| **macOS** | ✅ `screencapture` | ⚠️ `osascript`, needs Accessibility permission |
-| **Linux (X11)** | ✅ `scrot` / `import` | ⚠️ `xdotool`, Wayland limited |
-
-Windows is the reference platform — everything was measured there (RTX 4060 Laptop, DirectML).
-
-### GPU notes
-
-On Windows the fast path uses **DirectML** (`onnxruntime-directml`), which needs no CUDA runtime at all.
-
-> **Gotcha:** `rapidocr` pulls in the CPU `onnxruntime`, and pip keeps both installed because
-> their version numbers are unrelated. The CPU build wins at import time, so you silently stay
-> on CPU. Fix it once:
->
-> ```bash
-> pip uninstall -y onnxruntime
-> pip install --force-reinstall --no-deps onnxruntime-directml
-> xiaomi-ocr-mcp --check        # fast_backend should now say "dml"
-> ```
-
-CUDA EP was tried and abandoned: onnxruntime 1.31 requires CUDA 13 + cuDNN 9, and the provider registers but never yields a device in this driver combination.
+Java syntax checking needs a JDK (`javac` on PATH or `JAVA_HOME`).
 
 ## CLI
 
 ```bash
-xiaomi-ocr-mcp                  # run the MCP server on stdio
-xiaomi-ocr-mcp --check          # environment diagnostics
-xiaomi-ocr-mcp --selftest       # capture + OCR smoke test
-xiaomi-ocr-mcp --download-model # fetch VLM weights
+xiaomi-ocr-mcp rebuild recording.mp4 -o F:/replica     # resumable
+xiaomi-ocr-mcp report F:/replica                        # summary + review queue
+xiaomi-ocr-mcp crop F:/replica <file> 40 52             # PNG of those lines from the video
+xiaomi-ocr-mcp set  F:/replica <file> 47 "        return x;"
+xiaomi-ocr-mcp verify F:/replica [--build]              # javac/XML/YAML (+ mvn compile)
 ```
 
-## Known limitations
+Bookkeeping lives in `F:/replica/.xocr/`: `reads.jsonl` (frame cache), `state.json`
+(per-line results), `overrides.json` (your fixes — re-applied on every rebuild), `REPORT.md`.
 
-- **Synthetic input can be filtered by the OS.** In sandboxed or remote sessions, `SendInput` may report success while nothing reaches other processes. Run `input_selftest` to find out; `clipboard_set` + a manual paste is the reliable fallback.
-- **VLM cost scales with output length**, not image size — it is ~25 tok/s, so a full screen of code takes 6 s. That is why the fast path exists.
-- **IDEA inlay hints** (`key: value`, `0 usages`) leak into OCR output. If you screen-record an IDE, post-process them away.
+## MCP
 
-## License
+```json
+{ "mcpServers": { "xiaomi-ocr": { "command": "xiaomi-ocr-mcp" } } }
+```
 
-Apache-2.0
+| tool | purpose |
+|---|---|
+| `video_info(video)` | duration/resolution + sample frames to check readability |
+| `rebuild_start(video, out)` / `rebuild_status(out)` | rebuild in the background |
+| `review_queue(out)` | ranges to check: syntax errors, never-shown lines, OCR doubts |
+| `view_lines(out, path, start, end)` | **the frame image** of those lines + current text |
+| `set_lines(out, path, start, text)` | fix lines (kept across rebuilds) |
+| `verify(out, build)` | syntax check, optional `mvn compile` |
+| `read_file`, `ocr_image` | helpers |
+
+An agent with vision closes the loop: `review_queue` → `view_lines` → compare → `set_lines`
+→ `verify`, until the queue is empty.
+
+## Testing with synthetic recordings
+
+```bash
+pip install pillow
+python tools/make_video.py path/to/project -o demo.mp4 --code-vision
+xiaomi-ocr-mcp rebuild demo.mp4 -o out
+python tools/evaluate.py path/to/project out --files demo.files.txt
+```
+
+## Limits
+
+- Built for IntelliJ IDEA; other editors work if they show line numbers in a left gutter.
+- Lines never shown on screen cannot be recovered — they are listed by number.
+- Review flags are still noisy (many `single`/`cjk` flags on correct lines).
