@@ -33,7 +33,27 @@ def _progress(p: dict) -> None:
     sys.stderr.flush()
 
 
+def _fix_gpu() -> int:
+    """Swap the CPU onnxruntime for onnxruntime-directml.
+
+    rapidocr pulls in the CPU build; both provide the same `onnxruntime` package and pip
+    never replaces one with the other, so the CPU build wins the import. Must run before
+    onnxruntime is imported in this process: Windows locks loaded DLLs.
+    """
+    import subprocess
+
+    py = sys.executable
+    subprocess.run([py, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
+    # the uninstall also removes files the DirectML build shares with it: reinstall in full
+    r = subprocess.run([py, "-m", "pip", "install", "--force-reinstall", "--no-deps",
+                        "onnxruntime-directml"], check=False)
+    print("now run `xiaomi-ocr-mcp check`: ocr_backend should be dml", file=sys.stderr)
+    return r.returncode
+
+
 def _check(fix_gpu: bool) -> int:
+    if fix_gpu:
+        return _fix_gpu()
     info: dict = {"version": __version__}
     try:
         import onnxruntime as ort
@@ -63,16 +83,6 @@ def _check(fix_gpu: bool) -> int:
     if tips:
         info["tips"] = tips
     _print(info)
-    if fix_gpu:
-        import subprocess
-
-        # rapidocr pulls in the CPU onnxruntime; both packages provide the same module and
-        # pip never replaces one with the other, so the CPU build wins the import.
-        py = sys.executable
-        subprocess.run([py, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
-        subprocess.run([py, "-m", "pip", "install", "--force-reinstall", "--no-deps",
-                        "onnxruntime-directml"], check=False)
-        print("re-run `xiaomi-ocr-mcp check`: ocr_backend should now be dml", file=sys.stderr)
     return 0
 
 
