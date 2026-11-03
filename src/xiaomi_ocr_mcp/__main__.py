@@ -44,6 +44,21 @@ def _check() -> int:
     info["vlm_enabled"] = config.vlm_enabled()
     info["vlm_model_dir"] = str(config.vlm_model_dir())
     info["cache_dir"] = str(config.home())
+
+    tips = []
+    if info.get("fast_backend") == "cpu":
+        tips.append(
+            "Running on CPU (~2 s/screen). For ~0.23 s/screen install the GPU extra: "
+            'pip install "xiaomi-ocr-mcp[gpu]" (Windows/DirectML)'
+        )
+    if not info["vlm_enabled"]:
+        tips.append(
+            "VLM channel is off (fast path only). Enable with: "
+            "pip install \"xiaomi-ocr-mcp[vlm]\" && xiaomi-ocr-mcp --download-model"
+        )
+    if tips:
+        info["tips"] = tips
+
     print(json.dumps(info, indent=2, ensure_ascii=False))
     return 0
 
