@@ -167,7 +167,19 @@ Windows is the reference platform — everything was measured there (RTX 4060 La
 
 ### GPU notes
 
-On Windows the fast path uses **DirectML** (`onnxruntime-directml`), which needs no CUDA runtime at all. CUDA EP was tried and abandoned: onnxruntime 1.31 requires CUDA 13 + cuDNN 9, and the provider registers but never yields a device in this driver combination.
+On Windows the fast path uses **DirectML** (`onnxruntime-directml`), which needs no CUDA runtime at all.
+
+> **Gotcha:** `rapidocr` pulls in the CPU `onnxruntime`, and pip keeps both installed because
+> their version numbers are unrelated. The CPU build wins at import time, so you silently stay
+> on CPU. Fix it once:
+>
+> ```bash
+> pip uninstall -y onnxruntime
+> pip install --force-reinstall --no-deps onnxruntime-directml
+> xiaomi-ocr-mcp --check        # fast_backend should now say "dml"
+> ```
+
+CUDA EP was tried and abandoned: onnxruntime 1.31 requires CUDA 13 + cuDNN 9, and the provider registers but never yields a device in this driver combination.
 
 ## CLI
 
