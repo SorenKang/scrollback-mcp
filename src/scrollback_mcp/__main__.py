@@ -1,13 +1,13 @@
 """Command line.
 
-    xiaomi-ocr-mcp                              run the MCP server (stdio) — what MCP clients start
-    xiaomi-ocr-mcp rebuild VIDEO -o OUT         recording → project directory
-    xiaomi-ocr-mcp report OUT                   what still needs review
-    xiaomi-ocr-mcp crop OUT FILE START [END]    frame crop showing those lines
-    xiaomi-ocr-mcp set OUT FILE LINE TEXT       fix line(s); TEXT may hold \\n; '-' reads stdin
-    xiaomi-ocr-mcp verify OUT [--build]         syntax check (+ mvn compile)
-    xiaomi-ocr-mcp frame VIDEO SECONDS -o PNG   save one frame
-    xiaomi-ocr-mcp check [--fix-gpu]            environment diagnostics
+    scrollback-mcp                              run the MCP server (stdio) — what MCP clients start
+    scrollback-mcp rebuild VIDEO -o OUT         recording → project directory
+    scrollback-mcp report OUT                   what still needs review
+    scrollback-mcp crop OUT FILE START [END]    frame crop showing those lines
+    scrollback-mcp set OUT FILE LINE TEXT       fix line(s); TEXT may hold \\n; '-' reads stdin
+    scrollback-mcp verify OUT [--build]         syntax check (+ mvn compile)
+    scrollback-mcp frame VIDEO SECONDS -o PNG   save one frame
+    scrollback-mcp check [--fix-gpu]            environment diagnostics
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _fix_gpu() -> int:
     # the uninstall also removes files the DirectML build shares with it: reinstall in full
     r = subprocess.run([py, "-m", "pip", "install", "--force-reinstall", "--no-deps",
                         "onnxruntime-directml"], check=False)
-    print("now run `xiaomi-ocr-mcp check`: ocr_backend should be dml", file=sys.stderr)
+    print("now run `scrollback-mcp check`: ocr_backend should be dml", file=sys.stderr)
     return r.returncode
 
 
@@ -74,10 +74,10 @@ def _check(fix_gpu: bool) -> int:
 
             version("onnxruntime-directml")
             tips.append("onnxruntime-directml is installed but the CPU onnxruntime shadows it: "
-                        "run `xiaomi-ocr-mcp check --fix-gpu`")
+                        "run `scrollback-mcp check --fix-gpu`")
         except Exception:  # noqa: BLE001
-            tips.append('CPU only. For GPU on Windows: pip install "xiaomi-ocr-mcp[gpu]" '
-                        "then `xiaomi-ocr-mcp check --fix-gpu`")
+            tips.append('CPU only. For GPU on Windows: pip install "scrollback-mcp[gpu]" '
+                        "then `scrollback-mcp check --fix-gpu`")
     if not info["javac"]:
         tips.append("javac not found: Java syntax checking is disabled (set JAVA_HOME)")
     if tips:
@@ -93,7 +93,7 @@ def main() -> int:
         mcp.run(transport="stdio")
         return 0
 
-    ap = argparse.ArgumentParser(prog="xiaomi-ocr-mcp", description=__doc__,
+    ap = argparse.ArgumentParser(prog="scrollback-mcp", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)

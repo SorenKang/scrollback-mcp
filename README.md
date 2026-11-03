@@ -1,4 +1,4 @@
-# xiaomi-ocr-mcp
+# scrollback-mcp
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
@@ -63,9 +63,9 @@ punctuation and `//` markers in comments, plus a few letter-case slips.
 ## Install
 
 ```bash
-pip install "xiaomi-ocr-mcp[gpu,yaml] @ git+https://github.com/SorenKang/xiaomi-ocr-mcp.git"
-xiaomi-ocr-mcp check            # ocr_backend should be dml (Windows) or cuda
-xiaomi-ocr-mcp check --fix-gpu  # if it says cpu although onnxruntime-directml is installed
+pip install "scrollback-mcp[gpu,yaml] @ git+https://github.com/SorenKang/scrollback-mcp.git"
+scrollback-mcp check            # ocr_backend should be dml (Windows) or cuda
+scrollback-mcp check --fix-gpu  # if it says cpu although onnxruntime-directml is installed
 ```
 
 Java syntax checking needs a JDK (`javac` on PATH or `JAVA_HOME`).
@@ -73,11 +73,11 @@ Java syntax checking needs a JDK (`javac` on PATH or `JAVA_HOME`).
 ## CLI
 
 ```bash
-xiaomi-ocr-mcp rebuild recording.mp4 -o F:/replica     # resumable
-xiaomi-ocr-mcp report F:/replica                        # summary + review queue
-xiaomi-ocr-mcp crop F:/replica <file> 40 52             # PNG of those lines from the video
-xiaomi-ocr-mcp set  F:/replica <file> 47 "        return x;"
-xiaomi-ocr-mcp verify F:/replica [--build]              # javac/XML/YAML (+ mvn compile)
+scrollback-mcp rebuild recording.mp4 -o F:/replica     # resumable
+scrollback-mcp report F:/replica                        # summary + review queue
+scrollback-mcp crop F:/replica <file> 40 52             # PNG of those lines from the video
+scrollback-mcp set  F:/replica <file> 47 "        return x;"
+scrollback-mcp verify F:/replica [--build]              # javac/XML/YAML (+ mvn compile)
 ```
 
 Bookkeeping lives in `F:/replica/.xocr/`: `reads.jsonl` (frame cache), `state.json`
@@ -86,7 +86,7 @@ Bookkeeping lives in `F:/replica/.xocr/`: `reads.jsonl` (frame cache), `state.js
 ## MCP
 
 ```json
-{ "mcpServers": { "xiaomi-ocr": { "command": "xiaomi-ocr-mcp" } } }
+{ "mcpServers": { "scrollback": { "command": "scrollback-mcp" } } }
 ```
 
 | tool | purpose |
@@ -107,7 +107,7 @@ An agent with vision closes the loop: `review_queue` → `view_lines` → compar
 ```bash
 pip install pillow
 python tools/make_video.py path/to/project -o demo.mp4 --code-vision
-xiaomi-ocr-mcp rebuild demo.mp4 -o out
+scrollback-mcp rebuild demo.mp4 -o out
 python tools/evaluate.py path/to/project out --files demo.files.txt
 ```
 

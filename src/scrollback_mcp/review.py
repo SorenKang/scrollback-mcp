@@ -77,8 +77,8 @@ def write_report(out: str | Path, state: dict | None = None) -> dict:
         notes = "; ".join(f["notes"]) + ("" if f["path_sure"] else " (path guessed)")
         lines.append(f"| `{f['path']}` | {len(f['lines'])} | {n_rev} | {notes} |")
     lines += ["", "## Review queue", "",
-              "`xiaomi-ocr-mcp crop <out> <file> <start> <end>` shows the frame; "
-              "`xiaomi-ocr-mcp set <out> <file> <line> <text>` fixes it.", ""]
+              "`scrollback-mcp crop <out> <file> <start> <end>` shows the frame; "
+              "`scrollback-mcp set <out> <file> <line> <text>` fixes it.", ""]
     for i in q:
         err = f" — {'; '.join(i['errors'])}" if i.get("errors") else ""
         lines.append(f"- `{i['path']}` L{i['start']}-{i['end']} [{', '.join(i['flags'])}]{err}")

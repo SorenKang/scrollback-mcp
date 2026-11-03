@@ -38,8 +38,8 @@ _lock = threading.Lock()
 
 
 def pick_backend() -> str:
-    """`XIAOMI_OCR_GPU` = auto | dml | cuda | cpu. auto prefers CUDA, then DirectML."""
-    want = os.environ.get("XIAOMI_OCR_GPU", "auto").lower()
+    """`SCROLLBACK_GPU` = auto | dml | cuda | cpu. auto prefers CUDA, then DirectML."""
+    want = os.environ.get("SCROLLBACK_GPU", "auto").lower()
     if want in ("cpu", "cuda", "dml"):
         return want
     try:
@@ -65,7 +65,7 @@ def _build(backend: str):
         "Det.lang_type": LangDet.CH,
         "Det.ocr_version": OCRVersion.PPOCRV6,
         "Rec.model_type": {"small": ModelType.SMALL, "medium": ModelType.MEDIUM,
-                           "server": ModelType.SERVER}[os.environ.get("XIAOMI_OCR_REC", "medium")],
+                           "server": ModelType.SERVER}[os.environ.get("SCROLLBACK_REC", "medium")],
         "Rec.lang_type": LangRec.CH,          # the CH model reads ASCII code fine and Chinese comments too
         "Rec.ocr_version": OCRVersion.PPOCRV6,
         "Rec.rec_batch_num": 16,

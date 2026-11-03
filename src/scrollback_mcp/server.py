@@ -19,14 +19,14 @@ from pathlib import Path
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr,
-                    format="[xiaomi-ocr-mcp] %(levelname)s %(message)s")
+                    format="[scrollback-mcp] %(levelname)s %(message)s")
 
 try:  # mcp >= 2
     from mcp.server.mcpserver import Image, MCPServer as _Server
 except ImportError:  # mcp 1.x
     from mcp.server.fastmcp import FastMCP as _Server, Image  # type: ignore
 
-mcp = _Server("xiaomi-ocr-mcp")
+mcp = _Server("scrollback-mcp")
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
