@@ -1,0 +1,30 @@
+# Build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# Runtime output
+shots/
+work/
+*.png
+!docs/*.png
+
+# Model weights (downloaded separately via --download-model)
+models/
+*.safetensors
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Test scratch
+_dbg*.py
+_t1.py
+_hs.jsonl
